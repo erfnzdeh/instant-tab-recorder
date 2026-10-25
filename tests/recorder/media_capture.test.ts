@@ -106,6 +106,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: false,
+                    followMeetMute: false,
                 },
                 44100,
             )
@@ -126,6 +127,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: false,
+                    followMeetMute: false,
                 },
                 48000,
             )
@@ -152,6 +154,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: false,
+                    followMeetMute: false,
                 },
                 44100,
             )
@@ -178,6 +181,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: false,
+                    followMeetMute: false,
                 },
                 44100,
             )
@@ -205,6 +209,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: false,
                     echoCancellation: false,
                     autoGainControl: true,
+                    followMeetMute: false,
                 },
                 48000,
             )
@@ -233,6 +238,7 @@ describe('MediaCapture', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: false,
+                    followMeetMute: false,
                 },
                 44100,
             )

@@ -93,6 +93,21 @@
     "formatOff": {
         "message": "オフ"
     },
+    "formatMeetMuteLive": {
+        "message": "マイク: Meet に連動 (録音中)"
+    },
+    "formatMeetMuteMuted": {
+        "message": "マイク: 無音 (Meet でミュート中)"
+    },
+    "formatMeetMuteInactive": {
+        "message": "マイク: Meet の通話外のため通常どおり録音"
+    },
+    "formatMeetMuteUnknown": {
+        "message": "マイク: Meet のミュートを検出できないため通常どおり録音"
+    },
+    "formatMeetMuteNoAccess": {
+        "message": "マイク: この端末で Meet へのアクセスが未許可のため通常どおり録音"
+    },
     "tabRecords": {
         "message": "録画一覧"
     },
@@ -849,5 +864,26 @@
     },
     "playerSummaryNoTranscription": {
         "message": "文字起こしデータがありません。先に文字起こしを実行してください。"
+    },
+    "settingsFollowMeetMute": {
+        "message": "Google Meet のミュートに連動"
+    },
+    "settingsFollowMeetMuteTitle": {
+        "message": "録画中の Google Meet タブでミュートしている間、録画のマイク音声を無音にします"
+    },
+    "settingsFollowMeetMuteHint": {
+        "message": "録画中の Google Meet タブでミュートしている間、録画のマイク音声を無音にします。他の参加者の音声は常に録音されます。オンにすると meet.google.com へのアクセス許可を求めます。ミュートを検出できない場合、マイクは録音を続けます。"
+    },
+    "settingsFollowMeetMuteNoAccess": {
+        "message": "この端末では meet.google.com へのアクセスが許可されていません。スイッチをオンにして許可してください。"
+    },
+    "settingsApplyMeetMuteToMicFile": {
+        "message": "分離したマイク音声にも Meet のミュートを適用"
+    },
+    "settingsApplyMeetMuteToMicFileHint": {
+        "message": "オフ: 分離したマイク音声はバックアップとしてすべて残ります。オン: メインの録画と同じく、ミュート中は無音になります。"
+    },
+    "recordListTitleMeetSync": {
+        "message": "Google Meet のミュートに連動"
     }
 }

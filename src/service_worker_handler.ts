@@ -1,4 +1,5 @@
-import type { Message, Trigger } from './message'
+import type { MeetContentReadyResponse, Message, Trigger } from './message'
+import type { MeetSync } from './meet/service_worker_sync'
 import { Configuration, type Resolution } from './configuration'
 import type { RecordingState } from './handler'
 import { deepMerge } from './element/util'
@@ -20,14 +21,19 @@ export interface ServiceWorkerDeps {
     isOffscreenDocumentOpen?: () => Promise<boolean>
     ensureOffscreenDocument?: () => Promise<void>
     sendRuntimeMessage?: (msg: Message) => Promise<unknown>
+    meetSync?: Pick<MeetSync, 'handleState' | 'handleDisagreement' | 'handleContentReady'>
 }
 
 export type HandleMessageResult = {
-    response: Promise<Configuration | void>
+    response: Promise<Configuration | MeetContentReadyResponse | void>
     fireAndForget: boolean
 }
 
-export function handleMessage(message: Message, deps: ServiceWorkerDeps): HandleMessageResult | null {
+export function handleMessage(
+    message: Message,
+    deps: ServiceWorkerDeps,
+    sender?: chrome.runtime.MessageSender,
+): HandleMessageResult | null {
     switch (message.type) {
         case 'resize-window':
             return { response: handleResizeWindow(message, deps), fireAndForget: true }
@@ -51,6 +57,16 @@ export function handleMessage(message: Message, deps: ServiceWorkerDeps): Handle
             return { response: handleRequestRecordingState(deps), fireAndForget: true }
         case 'claim-clients':
             return { response: deps.claimClients(), fireAndForget: false }
+        // Meet content scripts: only messages from a tab carry sender.tab
+        case 'meet-mute-state':
+            if (!deps.meetSync) return null
+            return { response: deps.meetSync.handleState(message, sender?.tab?.id), fireAndForget: true }
+        case 'meet-mute-disagreement':
+            if (!deps.meetSync) return null
+            return { response: deps.meetSync.handleDisagreement(message, sender?.tab?.id), fireAndForget: true }
+        case 'meet-content-ready':
+            if (!deps.meetSync) return null
+            return { response: deps.meetSync.handleContentReady(sender?.tab?.id), fireAndForget: false }
         case 'start-transcription':
         case 'query-transcription-status':
         case 'start-model-download':
@@ -176,10 +192,10 @@ export function createMessageListener(
 ): (
     message: Message,
     sender: chrome.runtime.MessageSender,
-    sendResponse: (response?: Configuration) => void,
+    sendResponse: (response?: Configuration | MeetContentReadyResponse) => void,
 ) => boolean | undefined {
-    return (message, _sender, sendResponse) => {
-        const result = handleMessage(message, deps)
+    return (message, sender, sendResponse) => {
+        const result = handleMessage(message, deps, sender)
         if (result == null) return
 
         if (result.fireAndForget) {
@@ -190,8 +206,8 @@ export function createMessageListener(
         }
 
         result.response
-            .then(config => {
-                if (config != null) sendResponse(config)
+            .then(response => {
+                if (response != null) sendResponse(response)
                 else sendResponse()
             })
             .catch(e => {

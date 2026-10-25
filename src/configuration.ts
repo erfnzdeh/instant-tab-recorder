@@ -247,9 +247,13 @@ export interface Microphone {
     noiseSuppression: boolean
     echoCancellation: boolean
     autoGainControl: boolean
+    /** Silence the recorded microphone while muted in the recorded Google Meet tab */
+    followMeetMute: boolean
 }
 export interface AudioSeparation {
     enabled: boolean
+    /** Also silence the separate mic file while muted in Meet (off keeps it as a raw backup) */
+    applyMeetMuteToMicFile: boolean
 }
 export interface RecordingTimer {
     enabled: boolean
@@ -398,6 +402,7 @@ export class Configuration {
             noiseSuppression: true,
             echoCancellation: true,
             autoGainControl: false,
+            followMeetMute: false,
         }
         this.cropping = {
             enabled: false,
@@ -411,6 +416,7 @@ export class Configuration {
         this.recordingSortOrder = 'asc'
         this.audioSeparation = {
             enabled: false,
+            applyMeetMuteToMicFile: false,
         }
         this.recordingTimer = {
             enabled: false,
@@ -477,6 +483,7 @@ export class Configuration {
                 noiseSuppression: microphone.noiseSuppression,
                 echoCancellation: microphone.echoCancellation,
                 autoGainControl: microphone.autoGainControl,
+                followMeetMute: microphone.followMeetMute,
             },
             cropping: {
                 enabled: cropping.enabled,
@@ -565,6 +572,16 @@ export class Configuration {
                 config.microphone.autoGainControl = false
                 migrated = true
             }
+            if (typeof config.microphone.followMeetMute !== 'boolean') {
+                config.microphone.followMeetMute = false
+                migrated = true
+            }
+        }
+
+        // Migrate: ensure audioSeparation.applyMeetMuteToMicFile has a default value
+        if (config.audioSeparation && typeof config.audioSeparation.applyMeetMuteToMicFile !== 'boolean') {
+            config.audioSeparation.applyMeetMuteToMicFile = false
+            migrated = true
         }
 
         return migrated

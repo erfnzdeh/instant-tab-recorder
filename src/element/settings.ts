@@ -38,6 +38,7 @@ import { WebLocalStorage } from '../storage'
 import type { FetchConfigMessage } from '../message'
 import { deepMerge } from './util'
 import { applyTheme } from '../theme'
+import { MEET_MATCH_PATTERN } from '../meet/service_worker_sync'
 import { t } from '../i18n'
 import { switchLabelStyle } from './switchStyle'
 import { registerFlacEncoder } from '@mediabunny/flac-encoder'
@@ -257,6 +258,14 @@ export class Settings extends LitElement {
 
     private currentConfig!: Configuration
 
+    /** Access to meet.google.com is an optional, per-device permission */
+    @property()
+    private hasMeetAccess: boolean = false
+
+    private readonly handleMeetPermissionChange = () => {
+        void this.refreshMeetAccess()
+    }
+
     @property({ attribute: false })
     public get config(): Configuration {
         return this.currentConfig
@@ -408,6 +417,36 @@ export class Settings extends LitElement {
 
     private handleMicAutoGainControlChange(e: CustomEvent<{ autoGainControl: boolean }>) {
         this.config.microphone.autoGainControl = e.detail.autoGainControl
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
+    }
+
+    private async refreshMeetAccess() {
+        try {
+            this.hasMeetAccess = await chrome.permissions.contains({ origins: [MEET_MATCH_PATTERN] })
+        } catch (e) {
+            console.error('Failed to check Meet access:', e)
+            this.hasMeetAccess = false
+        }
+    }
+
+    private async handleFollowMeetMuteInput(e: Event) {
+        if (!(e.target instanceof MdSwitch)) return
+        const selected = e.target.selected
+        let enabled = false
+        try {
+            if (selected) {
+                // Must run directly from the click (user gesture) for Chrome to show the prompt
+                enabled = await chrome.permissions.request({ origins: [MEET_MATCH_PATTERN] })
+            } else {
+                // Drop the access when the feature is off, so no script runs on Meet at all
+                await chrome.permissions.remove({ origins: [MEET_MATCH_PATTERN] })
+            }
+        } catch (err) {
+            console.error('Failed to change Meet access:', err)
+        }
+        this.hasMeetAccess = enabled
+        this.config.microphone.followMeetMute = enabled
         Settings.setConfiguration(this.config)
         this.requestUpdate('config')
     }
@@ -700,6 +739,20 @@ export class Settings extends LitElement {
                                       @noise-suppression-change=${this.handleMicNoiseSuppressionChange}
                                       @echo-cancellation-change=${this.handleMicEchoCancellationChange}
                                       @auto-gain-control-change=${this.handleMicAutoGainControlChange}></mic-settings>
+                                  <label class="switch-label" title="${t('settingsFollowMeetMuteTitle')}">
+                                      ${t('settingsFollowMeetMute')}
+                                      <md-switch
+                                          .selected=${live(this.config.microphone.followMeetMute && this.hasMeetAccess)}
+                                          @input=${this.handleFollowMeetMuteInput}></md-switch>
+                                  </label>
+                                  <p class="settings-hint">${t('settingsFollowMeetMuteHint')}</p>
+                                  ${
+                                      this.config.microphone.followMeetMute && !this.hasMeetAccess
+                                          ? html`<p class="settings-hint error">
+                                                ${t('settingsFollowMeetMuteNoAccess')}
+                                            </p>`
+                                          : ''
+                                  }
                               `
                             : ''
                     }
@@ -715,6 +768,25 @@ export class Settings extends LitElement {
                             ?selected=${live(this.config.audioSeparation.enabled ?? false)}
                             @input=${this.updateProp('audioSeparation', 'enabled')}></md-switch>
                     </label>
+                    ${
+                        this.config.audioSeparation.enabled &&
+                        this.config.microphone.enabled &&
+                        this.config.microphone.followMeetMute &&
+                        this.hasMeetAccess
+                            ? html`
+                                  <label class="switch-label">
+                                      ${t('settingsApplyMeetMuteToMicFile')}
+                                      <md-switch
+                                          ?selected=${live(this.config.audioSeparation.applyMeetMuteToMicFile ?? false)}
+                                          @input=${this.updateProp(
+                                              'audioSeparation',
+                                              'applyMeetMuteToMicFile',
+                                          )}></md-switch>
+                                  </label>
+                                  <p class="settings-hint">${t('settingsApplyMeetMuteToMicFileHint')}</p>
+                              `
+                            : ''
+                    }
                 </div>
             </section>
 
@@ -1073,6 +1145,7 @@ export class Settings extends LitElement {
                     if (key2 == null) return
                     switch (key2) {
                         case 'enabled':
+                        case 'applyMeetMuteToMicFile':
                             if (!(e.target instanceof MdSwitch)) return
                             this.config[key1][key2] = e.target.selected
                             break
@@ -1407,6 +1480,13 @@ export class Settings extends LitElement {
     override connectedCallback() {
         super.connectedCallback()
 
+        // chrome.permissions is absent in some test environments
+        if (chrome.permissions != null) {
+            void this.refreshMeetAccess()
+            chrome.permissions.onAdded.addListener(this.handleMeetPermissionChange)
+            chrome.permissions.onRemoved.addListener(this.handleMeetPermissionChange)
+        }
+
         this.messageListener = (message: Message) => {
             switch (message.type) {
                 case 'model-download-status-response':
@@ -1521,6 +1601,8 @@ export class Settings extends LitElement {
 
     override disconnectedCallback() {
         super.disconnectedCallback()
+        chrome.permissions?.onAdded.removeListener(this.handleMeetPermissionChange)
+        chrome.permissions?.onRemoved.removeListener(this.handleMeetPermissionChange)
         if (this.messageListener) {
             chrome.runtime.onMessage.removeListener(this.messageListener)
         }

@@ -185,6 +185,11 @@ export function sendEvent(e: Event) {
             })
             logger.info(e.type, { ...flatten(e.metrics) }, { scope })
             break
+
+        case 'meet_mute_detection_lost':
+        case 'meet_mute_signal_disagreement':
+            logger.warn(e.type, { ...flatten(e.tags) }, { scope })
+            break
     }
 }
 

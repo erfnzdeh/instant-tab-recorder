@@ -115,7 +115,23 @@ export interface RecordingState {
     recordingMode?: VideoRecordingMode
     micEnabled?: boolean
     stopAtMs?: number
+    /** Id of the tab being recorded */
+    tabId?: number
+    /** The recorded mic follows Meet's mute state for this recording */
+    followMeetMute?: boolean
+    /** Current Meet mute sync status, see MeetSyncStatus */
+    meetSync?: MeetSyncStatus
+    /** Sentry events already sent for this recording (each is reported at most once) */
+    meetSyncReported?: { detectionLost?: boolean; disagreement?: boolean }
 }
+
+/**
+ * - off:      not following Meet for this recording (setting off, no mic, or no Meet access)
+ * - inactive: following, but the recorded tab is not in a Meet call right now; mic records normally
+ * - live / muted: following a Meet call; the mic is recorded / silenced
+ * - unknown:  following, but the mute state could not be detected; mic records (fail-open)
+ */
+export type MeetSyncStatus = 'off' | 'inactive' | 'live' | 'muted' | 'unknown'
 
 /**
  * Handle API requests for recording storage

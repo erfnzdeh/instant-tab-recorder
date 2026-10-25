@@ -15,6 +15,8 @@ import type {
     CancelRecordingMessage,
     SentryEventMessage,
     CloseOffscreenIfIdleMessage,
+    SetMicMutedMessage,
+    MeetFollowMessage,
 } from './message'
 import { TIMER_STOP_CONFIRM_PENDING_KEY, TIMER_STOP_TRIGGER_KEY } from './message'
 import { Configuration, Resolution } from './configuration'
@@ -26,6 +28,8 @@ import { buildRecordingTitle } from './format'
 import { createMessageListener, type ServiceWorkerDeps } from './service_worker_handler'
 import { t } from './i18n'
 import { RecordingDB } from './recording_db'
+import { MeetSync } from './meet/service_worker_sync'
+import { hasMeetPermission, injectMeetContentScripts, syncMeetContentScripts } from './meet/registration'
 
 const recordingIcon = '/icons/recording.png'
 const recordingVideoOnlyIcon = '/icons/recording-video-only.png'
@@ -112,9 +116,22 @@ chrome.runtime.onInstalled.addListener(async details => {
         visible: false,
     })
 
+    await syncMeetContentScripts().catch(e => console.error('Failed to sync Meet content scripts:', e))
+
     if (details.reason === 'install') {
         await chrome.runtime.openOptionsPage()
     }
+})
+
+// "Follow Meet mute": keep the Meet content scripts registered exactly while access is granted
+chrome.runtime.onStartup.addListener(() => {
+    syncMeetContentScripts().catch(e => console.error('Failed to sync Meet content scripts:', e))
+})
+chrome.permissions.onAdded.addListener(() => {
+    syncMeetContentScripts().catch(e => console.error('Failed to sync Meet content scripts:', e))
+})
+chrome.permissions.onRemoved.addListener(() => {
+    syncMeetContentScripts().catch(e => console.error('Failed to sync Meet content scripts:', e))
 })
 
 async function getOffscreenDocument(): Promise<chrome.runtime.ExtensionContext | undefined> {
@@ -285,7 +302,12 @@ async function startRecording(tab: chrome.tabs.Tab, trigger: StartTrigger) {
         recordingMode: response.recordingMode,
         micEnabled: response.micEnabled,
         stopAtMs: response.stopAtMs,
+        tabId: tab.id,
+        followMeetMute: response.followMeetMute,
+        meetSync: response.followMeetMute ? undefined : 'off',
     })
+    // Meet mute sync must never break the recording itself
+    await meetSync.start(tab.url).catch(e => console.error('Failed to start Meet mute sync:', e))
 
     await updateRecordingIndications()
     await broadcastRecordingState()
@@ -309,6 +331,8 @@ async function stopRecording(trigger: Trigger, skipConfirmation = false) {
         }
     }
 
+    await meetSync.stop().catch(e => console.error('Failed to stop Meet mute sync:', e))
+
     // Send stop-recording message to offscreen document
     const msg: StopRecordingMessage = {
         type: 'stop-recording',
@@ -329,6 +353,8 @@ async function stopRecording(trigger: Trigger, skipConfirmation = false) {
 }
 
 async function cancelRecording(error: string) {
+    await meetSync.stop().catch(e => console.error('Failed to stop Meet mute sync:', e))
+
     // Send cancel-recording message to offscreen document
     const msg: CancelRecordingMessage = { type: 'cancel-recording' }
     await chrome.runtime.sendMessage(msg)
@@ -433,8 +459,17 @@ async function updateBadge(state: RecordingState) {
 
 // Broadcast recording state to all option pages
 async function broadcastRecordingState() {
-    const { isRecording, isPaused, totalPausedMs, pausedAtMs, screenSize, startAtMs, stopAtMs } =
-        await getRecordingState()
+    const {
+        isRecording,
+        isPaused,
+        totalPausedMs,
+        pausedAtMs,
+        screenSize,
+        startAtMs,
+        stopAtMs,
+        followMeetMute,
+        meetSync: meetSyncStatus,
+    } = await getRecordingState()
     // When paused, include current pause duration in totalPausedMs
     const effectivePausedMs = (totalPausedMs ?? 0) + (isPaused && pausedAtMs != null ? Date.now() - pausedAtMs : 0)
     const msg: RecordingStateMessage = {
@@ -446,6 +481,8 @@ async function broadcastRecordingState() {
             screenSize,
             startAtMs,
             stopAtMs,
+            followMeetMute,
+            meetSync: meetSyncStatus,
         },
     }
     try {
@@ -454,6 +491,36 @@ async function broadcastRecordingState() {
         console.error('Failed to send recording state:', e)
     }
 }
+
+const meetSync = new MeetSync({
+    getRecordingState,
+    setRecordingState,
+    hasMeetPermission,
+    sendToTab: (tabId, msg) => chrome.tabs.sendMessage(tabId, msg),
+    injectContentScripts: injectMeetContentScripts,
+    setFollowedTab: async tabId => {
+        const msg: MeetFollowMessage = { type: 'meet-follow', tabId }
+        await chrome.runtime.sendMessage(msg)
+    },
+    setMicMuted: async muted => {
+        const msg: SetMicMutedMessage = { type: 'set-mic-muted', muted }
+        await chrome.runtime.sendMessage(msg)
+    },
+    onStatusChanged: async state => {
+        await updateActionTitle(state)
+        await broadcastRecordingState()
+    },
+    sendEvent: async event => {
+        const msg: SentryEventMessage = { type: 'sentry-event', event }
+        await chrome.runtime.sendMessage(msg)
+    },
+})
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+    // Only navigations matter (url is reported only for sites we have access to)
+    if (changeInfo.status !== 'loading' && changeInfo.url == null) return
+    meetSync.handleTabUpdated(tabId, tab.url).catch(e => console.error('Meet tab update failed:', e))
+})
 
 const messageHandlerDeps: ServiceWorkerDeps = {
     getRecordingState,
@@ -474,6 +541,7 @@ const messageHandlerDeps: ServiceWorkerDeps = {
         await createOffscreenDocument()
     },
     sendRuntimeMessage: msg => chrome.runtime.sendMessage(msg),
+    meetSync,
 }
 
 chrome.runtime.onMessage.addListener(

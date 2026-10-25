@@ -185,7 +185,7 @@ describe('fetch-config', () => {
             getRemoteConfiguration: vi.fn().mockResolvedValue(remoteConfig),
         })
         const result = handleMessage({ type: 'fetch-config' }, deps)
-        const config = await result!.response
+        const config = (await result!.response) as Configuration | undefined
         expect(config).toBeDefined()
         expect(config?.userId).toBe('test-user')
     })
@@ -406,5 +406,68 @@ describe('handleForwardToOffscreen lifecycle', () => {
         await result!.response
 
         expect(deps.ensureOffscreenDocument).not.toHaveBeenCalled()
+    })
+})
+
+// ---------- Meet content script messages ----------
+
+function createMeetSync() {
+    return {
+        handleState: vi.fn().mockResolvedValue(undefined),
+        handleDisagreement: vi.fn().mockResolvedValue(undefined),
+        handleContentReady: vi.fn().mockResolvedValue({ report: true }),
+    }
+}
+
+describe('Meet messages', () => {
+    const sender = { tab: { id: 42 } } as chrome.runtime.MessageSender
+
+    it('forwards meet-mute-state with the sender tab id', async () => {
+        const meetSync = createMeetSync()
+        const msg: Message = {
+            type: 'meet-mute-state',
+            state: 'muted',
+            dom: 'muted',
+            sender: 'muted',
+            hookActive: true,
+            settling: false,
+        }
+        const result = handleMessage(msg, createMockDeps({ meetSync }), sender)
+        await result!.response
+        expect(result!.fireAndForget).toBe(true)
+        expect(meetSync.handleState).toHaveBeenCalledWith(msg, 42)
+    })
+
+    it('forwards meet-mute-disagreement with the sender tab id', async () => {
+        const meetSync = createMeetSync()
+        const msg: Message = { type: 'meet-mute-disagreement', dom: 'live', sender: 'muted' }
+        await handleMessage(msg, createMockDeps({ meetSync }), sender)!.response
+        expect(meetSync.handleDisagreement).toHaveBeenCalledWith(msg, 42)
+    })
+
+    it('answers meet-content-ready', async () => {
+        const meetSync = createMeetSync()
+        const result = handleMessage({ type: 'meet-content-ready' }, createMockDeps({ meetSync }), sender)
+        expect(result!.fireAndForget).toBe(false)
+        expect(await result!.response).toEqual({ report: true })
+        expect(meetSync.handleContentReady).toHaveBeenCalledWith(42)
+    })
+
+    it('passes undefined tab id for messages not sent from a tab', async () => {
+        const meetSync = createMeetSync()
+        await handleMessage({ type: 'meet-content-ready' }, createMockDeps({ meetSync }))!.response
+        expect(meetSync.handleContentReady).toHaveBeenCalledWith(undefined)
+    })
+
+    it('ignores Meet messages when meetSync is not wired', () => {
+        expect(handleMessage({ type: 'meet-content-ready' }, createMockDeps())).toBeNull()
+    })
+
+    it('createMessageListener passes the sender and responds asynchronously', async () => {
+        const meetSync = createMeetSync()
+        const listener = createMessageListener(createMockDeps({ meetSync }), vi.fn())
+        const sendResponse = vi.fn()
+        expect(listener({ type: 'meet-content-ready' }, sender, sendResponse)).toBe(true)
+        await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ report: true }))
     })
 })

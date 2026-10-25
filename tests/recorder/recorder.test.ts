@@ -165,10 +165,11 @@ function createDefaultConfig(overrides: Partial<RecordingConfig> = {}): Recordin
             noiseSuppression: true,
             echoCancellation: true,
             autoGainControl: false,
+            followMeetMute: false,
         },
         cropping: { enabled: false, region: { x: 0, y: 0, width: 1920, height: 1080 } },
         muteRecordingTab: false,
-        audioSeparation: { enabled: false },
+        audioSeparation: { enabled: false, applyMeetMuteToMicFile: false },
         ...overrides,
     }
 }
@@ -176,6 +177,19 @@ function createDefaultConfig(overrides: Partial<RecordingConfig> = {}): Recordin
 const defaultRequest: StartRecording = {
     tabSize: { width: 1920, height: 1080 },
     streamId: 'stream-123',
+}
+
+function setupMeetMic(mediaCapture: MediaCapture, audioSeparation: AudioSeparationManager) {
+    const micTrack = createMockTrack('audio', 'mic-audio')
+    const separateMicTrack = createMockTrack('audio', 'mic-audio-clone')
+    ;(mediaCapture.captureMicrophone as Mock).mockResolvedValue(createMockStream([micTrack]))
+    ;(audioSeparation.createOutputs as Mock).mockResolvedValue({
+        sources: [],
+        clonedTracks: [separateMicTrack],
+        errorPromises: [],
+        micTrack: separateMicTrack,
+    })
+    return { micTrack, separateMicTrack }
 }
 
 // ---------- tests ----------
@@ -262,6 +276,7 @@ describe('RecordingSession', () => {
                     noiseSuppression: true,
                     echoCancellation: true,
                     autoGainControl: true,
+                    followMeetMute: false,
                 },
             })
             await session.start(defaultRequest, config)
@@ -314,14 +329,14 @@ describe('RecordingSession', () => {
         })
 
         test('creates audio separation outputs when enabled', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             expect(audioSeparation.createOutputs).toHaveBeenCalled()
         })
 
         test('does not create audio separation when disabled', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: false } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: false, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             expect(audioSeparation.createOutputs).not.toHaveBeenCalled()
@@ -423,7 +438,7 @@ describe('RecordingSession', () => {
         })
 
         test('finalizes audio separation outputs on stop', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
@@ -478,7 +493,7 @@ describe('RecordingSession', () => {
         })
 
         test('cancels audio separation outputs', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             await session.cancel()
@@ -520,7 +535,7 @@ describe('RecordingSession', () => {
         })
 
         test('throws when audio separation cancel fails', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             const separationError = new Error('Audio separation cancel failed')
@@ -539,7 +554,7 @@ describe('RecordingSession', () => {
         })
 
         test('throws AggregateError when both main output and audio separation cancel fail', async () => {
-            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
             await session.start(defaultRequest, config)
 
             const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
@@ -749,6 +764,70 @@ describe('RecordingSession', () => {
             const region = { x: 100, y: 200, width: 300, height: 400 }
             session.updateCropRegion(region)
             expect(crop.region).toEqual(region)
+        })
+    })
+
+    describe('Meet mute (setMicMuted)', () => {
+        test('reports followMeetMute only when the setting is on and a mic is recorded', async () => {
+            setupMeetMic(mediaCapture, audioSeparation)
+            const on = createDefaultConfig()
+            on.microphone = { ...on.microphone, followMeetMute: true }
+            expect((await session.start(defaultRequest, on)).followMeetMute).toBe(true)
+            await session.cancel()
+
+            expect((await session.start(defaultRequest, createDefaultConfig())).followMeetMute).toBe(false)
+            await session.cancel()
+
+            ;(mediaCapture.captureMicrophone as Mock).mockResolvedValue(null)
+            expect((await session.start(defaultRequest, on)).followMeetMute).toBe(false)
+        })
+
+        test('disables and re-enables the main mic track', async () => {
+            const { micTrack } = setupMeetMic(mediaCapture, audioSeparation)
+            await session.start(defaultRequest, createDefaultConfig())
+
+            session.setMicMuted(true)
+            expect(micTrack.enabled).toBe(false)
+            expect(session.isMicMuted).toBe(true)
+            session.setMicMuted(false)
+            expect(micTrack.enabled).toBe(true)
+            expect(session.isMicMuted).toBe(false)
+        })
+
+        test('leaves the separate mic file untouched by default (raw backup)', async () => {
+            const { separateMicTrack } = setupMeetMic(mediaCapture, audioSeparation)
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: false } })
+            await session.start(defaultRequest, config)
+
+            session.setMicMuted(true)
+            expect(separateMicTrack.enabled).toBeUndefined()
+        })
+
+        test('silences the separate mic file when opted in', async () => {
+            const { separateMicTrack } = setupMeetMic(mediaCapture, audioSeparation)
+            const config = createDefaultConfig({ audioSeparation: { enabled: true, applyMeetMuteToMicFile: true } })
+            await session.start(defaultRequest, config)
+
+            session.setMicMuted(true)
+            expect(separateMicTrack.enabled).toBe(false)
+            session.setMicMuted(false)
+            expect(separateMicTrack.enabled).toBe(true)
+        })
+
+        test('does not touch tab audio', async () => {
+            setupMeetMic(mediaCapture, audioSeparation)
+            await session.start(defaultRequest, createDefaultConfig())
+            session.setMicMuted(true)
+            const tabStream = (await (mediaCapture.captureTab as Mock).mock.results[0].value) as MediaStream
+            expect(tabStream.getAudioTracks()[0].enabled).toBeUndefined()
+        })
+
+        test('is a no-op without a mic and resets after the recording ends', async () => {
+            ;(mediaCapture.captureMicrophone as Mock).mockResolvedValue(null)
+            await session.start(defaultRequest, createDefaultConfig())
+            expect(() => session.setMicMuted(true)).not.toThrow()
+            await session.cancel()
+            expect(session.isMicMuted).toBe(false)
         })
     })
 })

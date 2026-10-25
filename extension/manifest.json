@@ -24,7 +24,11 @@
         "offscreen",
         "storage",
         "unlimitedStorage",
-        "contextMenus"
+        "contextMenus",
+        "scripting"
+    ],
+    "optional_host_permissions": [
+        "https://meet.google.com/*"
     ],
     "options_page": "option.html",
     "content_security_policy": {

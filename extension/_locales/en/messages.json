@@ -121,6 +121,26 @@
         "message": "off",
         "description": "Status indicator for disabled feature"
     },
+    "formatMeetMuteLive": {
+        "message": "mic: following Meet (live)",
+        "description": "Tooltip line while the recorded mic follows Google Meet and you are unmuted"
+    },
+    "formatMeetMuteMuted": {
+        "message": "mic: silenced (muted in Meet)",
+        "description": "Tooltip line while the recorded mic is silenced because you are muted in Google Meet"
+    },
+    "formatMeetMuteInactive": {
+        "message": "mic: not in a Meet call, recording normally",
+        "description": "Tooltip line when the recorded tab is not in a Google Meet call"
+    },
+    "formatMeetMuteUnknown": {
+        "message": "mic: can't detect Meet mute, recording normally",
+        "description": "Tooltip line when Google Meet mute detection failed"
+    },
+    "formatMeetMuteNoAccess": {
+        "message": "mic: no access to Meet on this device, recording normally",
+        "description": "Tooltip line when Follow Meet mute is on but meet.google.com access was not granted"
+    },
     "tabRecords": {
         "message": "Records",
         "description": "Tab label for records list"
@@ -1104,5 +1124,33 @@
     "playerSummaryNoTranscription": {
         "message": "No transcription found. Please transcribe the recording first.",
         "description": "Notice when there is no transcription data to summarize"
+    },
+    "settingsFollowMeetMute": {
+        "message": "Follow Google Meet mute",
+        "description": "Switch label: silence the recorded mic while muted in Google Meet"
+    },
+    "settingsFollowMeetMuteTitle": {
+        "message": "Silence your microphone in the recording while you are muted in the Google Meet tab you are recording",
+        "description": "Tooltip for the Follow Google Meet mute switch"
+    },
+    "settingsFollowMeetMuteHint": {
+        "message": "While you are muted in the Google Meet tab being recorded, your microphone is silenced in the recording. Other participants are always recorded. Turning this on asks for access to meet.google.com. If mute can't be detected, your microphone keeps recording.",
+        "description": "Hint below the Follow Google Meet mute switch"
+    },
+    "settingsFollowMeetMuteNoAccess": {
+        "message": "Access to meet.google.com isn't granted on this device. Turn the switch on to grant it.",
+        "description": "Error hint when the setting is on but the permission is missing"
+    },
+    "settingsApplyMeetMuteToMicFile": {
+        "message": "Apply Meet mute to the separate mic file",
+        "description": "Switch label in audio separation settings"
+    },
+    "settingsApplyMeetMuteToMicFileHint": {
+        "message": "Off: the separate mic file keeps everything as a backup. On: it is silenced while you are muted, like the main recording.",
+        "description": "Hint below the Apply Meet mute to the separate mic file switch"
+    },
+    "recordListTitleMeetSync": {
+        "message": "Follow Google Meet mute",
+        "description": "Tooltip for the Meet mute status line of the recording in progress"
     }
 }

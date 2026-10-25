@@ -1,4 +1,4 @@
-import { formatHHMM, buildRecordingTitle, formatElapsedTime } from '../src/format'
+import { formatHHMM, buildRecordingTitle, formatElapsedTime, formatMeetSyncStatus } from '../src/format'
 import type { RecordingState } from '../src/handler'
 
 describe('formatHHMM', () => {
@@ -205,5 +205,35 @@ describe('buildRecordingTitle', () => {
         const title = buildRecordingTitle(appName, state, 45 * 60_000)
         // Remaining should be frozen at stopAtMs - pausedAtMs = 30 min, not stopAtMs - now = 15 min
         expect(title).toContain('Timer: paused (00:30 remaining)')
+    })
+})
+
+describe('Meet mute status', () => {
+    const baseState: RecordingState = {
+        isRecording: true,
+        startAtMs: 1000,
+        recordingMode: 'video-and-audio',
+        micEnabled: true,
+    }
+
+    it('adds no line when the recording does not follow Meet', () => {
+        expect(formatMeetSyncStatus(baseState)).toBeNull()
+        expect(buildRecordingTitle('App', baseState, 1000).split('\n')).toHaveLength(4)
+    })
+
+    it.each([
+        ['live', 'mic: following Meet (live)'],
+        ['muted', 'mic: silenced (muted in Meet)'],
+        ['inactive', 'mic: not in a Meet call, recording normally'],
+        ['unknown', "mic: can't detect Meet mute, recording normally"],
+        ['off', 'mic: no access to Meet on this device, recording normally'],
+    ] as const)('shows %s', (meetSync, expected) => {
+        const state: RecordingState = { ...baseState, followMeetMute: true, meetSync }
+        expect(formatMeetSyncStatus(state)).toBe(expected)
+        expect(buildRecordingTitle('App', state, 1000).split('\n')[3]).toBe(expected)
+    })
+
+    it('treats a missing status as unknown (fail-open)', () => {
+        expect(formatMeetSyncStatus({ followMeetMute: true })).toBe("mic: can't detect Meet mute, recording normally")
     })
 })

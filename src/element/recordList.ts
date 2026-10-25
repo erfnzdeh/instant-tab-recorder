@@ -24,7 +24,8 @@ import { sendException } from '../sentry'
 import { recordingApi } from '../api_client'
 import { Settings } from './settings'
 import { Configuration, RecordingSortOrder } from '../configuration'
-import { formatElapsedTime } from '../format'
+import { formatElapsedTime, formatMeetSyncStatus } from '../format'
+import type { MeetSyncStatus } from '../handler'
 import { t } from '../i18n'
 import type { SubFileInfo } from '../recording_db'
 
@@ -104,6 +105,9 @@ export class RecordList extends LitElement {
         }
         .recording {
             color: var(--theme-recording, #d93025);
+        }
+        .meet-sync.warning {
+            color: var(--md-sys-color-error, #b3261e);
         }
         .canceled {
             color: var(--theme-text-secondary, #3f4948);
@@ -278,6 +282,10 @@ export class RecordList extends LitElement {
     private recordingStopAtMs: number | null = null
     private recordingPaused: boolean = false
     private recordingTotalPausedMs: number = 0
+    @state()
+    private meetSyncText: string | null = null
+    @state()
+    private meetSync: MeetSyncStatus | undefined = undefined
     private elapsedTimerId?: ReturnType<typeof setInterval>
 
     public constructor() {
@@ -368,8 +376,12 @@ export class RecordList extends LitElement {
                 }
                 this.recordingStopAtMs = recordingState.stopAtMs ?? null
                 this.updateTimerStopText()
+                this.meetSync = recordingState.meetSync
+                this.meetSyncText = formatMeetSyncStatus(recordingState)
             } else {
                 this.stopElapsedTimer()
+                this.meetSync = undefined
+                this.meetSyncText = null
             }
             await this.updateRecord()
             await this.checkStoredRecordingError()
@@ -521,6 +533,16 @@ export class RecordList extends LitElement {
                                                 >`
                                               : ''
                                       }
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            record.isRecording && this.meetSyncText
+                                ? html`<div
+                                      class="meta meet-sync${this.meetSync === 'unknown' || this.meetSync === 'off' ? ' warning' : ''}"
+                                      title=${t('recordListTitleMeetSync')}>
+                                      <md-icon>${this.meetSync === 'muted' ? 'mic_off' : 'mic'}</md-icon>
+                                      ${this.meetSyncText}
                                   </div>`
                                 : ''
                         }

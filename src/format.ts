@@ -1,5 +1,22 @@
-import type { RecordingState } from './handler'
+import type { MeetSyncStatus, RecordingState } from './handler'
 import { t } from './i18n'
+
+const meetSyncMessageKeys: Record<MeetSyncStatus, string> = {
+    off: 'formatMeetMuteNoAccess',
+    inactive: 'formatMeetMuteInactive',
+    live: 'formatMeetMuteLive',
+    muted: 'formatMeetMuteMuted',
+    unknown: 'formatMeetMuteUnknown',
+}
+
+/**
+ * Human-readable "Follow Meet mute" status, or null when the recording does not follow Meet.
+ * Shared by the action tooltip and the option page.
+ */
+export function formatMeetSyncStatus(state: Pick<RecordingState, 'followMeetMute' | 'meetSync'>): string | null {
+    if (!state.followMeetMute) return null
+    return t(meetSyncMessageKeys[state.meetSync ?? 'unknown'])
+}
 
 /**
  * Format milliseconds as hh:mm for tooltip display.
@@ -37,10 +54,12 @@ export function buildRecordingTitle(appName: string, state: RecordingState, now:
                 ? t('formatTimerPaused', formatHHMM(state.stopAtMs - (state.pausedAtMs ?? now), 'ceil'))
                 : t('formatTimerRemaining', formatHHMM(state.stopAtMs - now, 'ceil'))
             : null
+    const meetLine = formatMeetSyncStatus(state)
     return [
         appName,
         status,
         t('formatVideoAudioMic', [video, audio, mic]),
+        ...(meetLine ? [meetLine] : []),
         ...(timerLine ? [timerLine] : []),
         t('formatClickToStop'),
     ].join('\n')

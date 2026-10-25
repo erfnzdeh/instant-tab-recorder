@@ -1,4 +1,5 @@
 import type { StartTrigger, Trigger } from './message'
+import type { SignalState } from './meet/combine'
 
 export interface ExceptionMetadata {
     exceptionSource: string
@@ -15,6 +16,8 @@ export type Event =
     | AgreeTermsEvent
     | TranscriptionCompleteEvent
     | ModelDownloadCompleteEvent
+    | MeetMuteDetectionLostEvent
+    | MeetMuteSignalDisagreementEvent
 
 export interface AgreeTermsEvent {
     type: 'agree_terms'
@@ -101,5 +104,29 @@ export interface ModelDownloadCompleteEvent {
     metrics: {
         /** Total download time in milliseconds */
         totalMs: number
+    }
+}
+
+/**
+ * Meet mute detection stopped working during a recording (likely a Meet UI or internals change).
+ * Only signal states are reported: no URL, meeting code or names.
+ */
+export interface MeetMuteDetectionLostEvent {
+    type: 'meet_mute_detection_lost'
+    tags: {
+        dom: SignalState
+        sender: SignalState
+        hookActive: boolean
+        /** content-script: the page reported unknown; no-content-script: the page never answered */
+        reason: 'content-script' | 'no-content-script'
+    }
+}
+
+/** The mic button and Meet's audio sender contradicted each other for more than a second */
+export interface MeetMuteSignalDisagreementEvent {
+    type: 'meet_mute_signal_disagreement'
+    tags: {
+        dom: SignalState
+        sender: SignalState
     }
 }

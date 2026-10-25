@@ -497,6 +497,78 @@ describe('record-list', () => {
         })
     })
 
+    test('shows the Meet mute status of the recording in progress', async () => {
+        const startAtMs = Date.now() - 5000
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: 'video-' + startAtMs + '.webm',
+                size: 1024,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: startAtMs,
+                isRecording: true,
+                isTemporary: false,
+            } satisfies RecordingMetadata,
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        const send = (meetSync: string) =>
+            simulateChromeMessage({
+                type: 'recording-state',
+                data: {
+                    isRecording: true,
+                    isPaused: false,
+                    totalPausedMs: 0,
+                    startAtMs,
+                    followMeetMute: true,
+                    meetSync,
+                },
+            })
+
+        send('muted')
+        await vi.waitFor(() => {
+            const line = shadowQuery(el, '.meet-sync')
+            expect(line?.textContent).toContain('mic: silenced (muted in Meet)')
+            expect(line?.querySelector('md-icon')?.textContent).toBe('mic_off')
+            expect(line?.classList.contains('warning')).toBe(false)
+        })
+
+        send('unknown')
+        await vi.waitFor(() => {
+            const line = shadowQuery(el, '.meet-sync')
+            expect(line?.textContent).toContain("mic: can't detect Meet mute, recording normally")
+            expect(line?.classList.contains('warning')).toBe(true)
+        })
+    })
+
+    test('shows no Meet mute status when the recording does not follow Meet', async () => {
+        const startAtMs = Date.now() - 5000
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: 'video-' + startAtMs + '.webm',
+                size: 1024,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: startAtMs,
+                isRecording: true,
+                isTemporary: false,
+            } satisfies RecordingMetadata,
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+        simulateChromeMessage({
+            type: 'recording-state',
+            data: { isRecording: true, isPaused: false, totalPausedMs: 0, startAtMs, meetSync: 'off' },
+        })
+        await vi.waitFor(() => expect(shadowQuery(el, '.recording')).not.toBeNull())
+        expect(shadowQuery(el, '.meet-sync')).toBeNull()
+    })
+
     test('elapsed time stops updating while paused', async () => {
         vi.useFakeTimers()
         try {

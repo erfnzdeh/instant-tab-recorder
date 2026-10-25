@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs'
 import path from 'path'
-import { defineConfig, type Plugin } from 'vite'
+import { build, defineConfig, type Plugin } from 'vite'
 import { customElementsManifestCheckPlugin } from './scripts/check_custom_elements_manifest.ts'
 
 const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf-8'))
@@ -36,9 +36,54 @@ function appendModelLicensesPlugin(): Plugin {
     }
 }
 
+/**
+ * Content scripts cannot import ES module chunks and run as classic scripts, where top-level
+ * declarations would leak into the page (the MAIN-world hook shares Meet's global scope). Build each
+ * one separately as a self-contained IIFE after the main bundle.
+ */
+const contentScripts = {
+    meet_track_hook: 'src/meet/entry_track_hook.ts',
+    meet_content: 'src/meet/entry_content.ts',
+}
+function contentScriptsPlugin(mode: string): Plugin {
+    let isWatch = false
+    return {
+        name: 'content-scripts',
+        apply: 'build',
+        configResolved(config) {
+            isWatch = config.build.watch != null
+        },
+        buildStart() {
+            for (const entry of Object.values(contentScripts))
+                this.addWatchFile(path.resolve(import.meta.dirname, entry))
+        },
+        async closeBundle() {
+            for (const [name, entry] of Object.entries(contentScripts)) {
+                await build({
+                    configFile: false,
+                    logLevel: isWatch ? 'warn' : 'info',
+                    build: {
+                        outDir: 'extension/dist',
+                        emptyOutDir: false,
+                        lib: {
+                            entry: path.resolve(import.meta.dirname, entry),
+                            formats: ['iife'],
+                            name: `__instantTabRecorder_${name}`,
+                            fileName: () => `${name}.js`,
+                        },
+                        sourcemap: !!process.env.SOURCEMAP,
+                        minify: mode === 'production',
+                        target: 'chrome140',
+                    },
+                })
+            }
+        },
+    }
+}
+
 export default defineConfig(({ mode }) => ({
     base: '/dist/',
-    plugins: [customElementsManifestCheckPlugin(), appendModelLicensesPlugin()],
+    plugins: [customElementsManifestCheckPlugin(), appendModelLicensesPlugin(), contentScriptsPlugin(mode)],
     build: {
         outDir: 'extension/dist',
         emptyOutDir: true,

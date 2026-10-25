@@ -12,6 +12,8 @@ export interface AudioSeparationOutputs {
     sources: PausableSource[]
     /** Cloned media tracks that must be stopped on cleanup */
     clonedTracks: MediaStreamTrack[]
+    /** Cloned mic track feeding the separate mic file (independent of the main mix's mic track) */
+    micTrack?: MediaStreamTrack
     /** Error promises from audio track sources */
     errorPromises: Promise<void>[]
     /** File handles for retrieving sub-file info after finalize */
@@ -88,6 +90,7 @@ export class AudioSeparationManager {
                 result.micOutput = handle.output
                 result.sources.push(...handle.sources)
                 result.clonedTracks.push(micAudioTrack)
+                result.micTrack = micAudioTrack
                 result.errorPromises.push(...handle.errorPromises)
                 result.micFileHandle = micFileHandle
                 result.micFileName = micFileName

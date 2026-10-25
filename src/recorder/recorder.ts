@@ -1,5 +1,5 @@
 import { canEncodeAudio, type Output } from 'mediabunny'
-import type { VideoFormat, CropRegion, Microphone } from '../configuration'
+import type { VideoFormat, CropRegion, Microphone, AudioSeparation } from '../configuration'
 import { hasVideo, hasAudio } from '../configuration'
 import type { StartRecording, StartRecordingResponse } from '../message'
 import type { Preview } from '../preview'
@@ -23,7 +23,7 @@ export interface RecordingConfig {
     microphone: Microphone
     cropping: { enabled: boolean; region: CropRegion }
     muteRecordingTab: boolean
-    audioSeparation: { enabled: boolean }
+    audioSeparation: AudioSeparation
 }
 
 export interface RecordingResult {
@@ -55,6 +55,9 @@ export class RecordingSession implements OffscreenSession {
     private mainMimeType = ''
     private tickTimerId?: ReturnType<typeof setInterval>
     private currentVideoTrack: MediaStreamTrack | null = null
+    private micTrack: MediaStreamTrack | null = null
+    private applyMicMuteToSeparateFile = false
+    private micMuted = false
 
     constructor(
         private readonly mediaCapture: MediaCapture,
@@ -140,6 +143,8 @@ export class RecordingSession implements OffscreenSession {
 
             // Collect all media tracks for cleanup
             this.mediaTracks = [...tabMedia.getTracks(), ...(micStream?.getTracks() ?? [])]
+            this.micTrack = micStream?.getAudioTracks()[0] ?? null
+            this.applyMicMuteToSeparateFile = audioSeparation.applyMeetMuteToMicFile
 
             // Audio separation
             if (audioSeparation.enabled) {
@@ -193,6 +198,7 @@ export class RecordingSession implements OffscreenSession {
                 mimeType: this.mainMimeType,
                 recordingMode: videoFormat.recordingMode,
                 micEnabled: microphone.enabled && micStream != null,
+                followMeetMute: microphone.enabled && micStream != null && microphone.followMeetMute,
             }
         } catch (e) {
             // Cancel any outputs that were created/started to prevent zombie recordings
@@ -303,6 +309,23 @@ export class RecordingSession implements OffscreenSession {
         this.currentState = 'recording'
     }
 
+    /**
+     * Silence or restore the recorded microphone without touching tab audio. A disabled track
+     * renders digital silence, so the timeline stays continuous (unlike pause). The separate mic
+     * file has its own cloned track and follows only when the user opted in; otherwise it stays a
+     * raw backup.
+     */
+    setMicMuted(muted: boolean): void {
+        this.micMuted = muted
+        if (this.micTrack != null) this.micTrack.enabled = !muted
+        const separateMicTrack = this.separationOutputs?.micTrack
+        if (separateMicTrack != null && this.applyMicMuteToSeparateFile) separateMicTrack.enabled = !muted
+    }
+
+    get isMicMuted(): boolean {
+        return this.micMuted
+    }
+
     get isPaused(): boolean {
         return this.currentState === 'paused'
     }
@@ -340,6 +363,9 @@ export class RecordingSession implements OffscreenSession {
         this.mediaTracks.forEach(t => t.stop())
         this.mediaTracks = []
         this.currentVideoTrack = null
+        this.micTrack = null
+        this.applyMicMuteToSeparateFile = false
+        this.micMuted = false
         this.currentState = 'idle'
     }
 }

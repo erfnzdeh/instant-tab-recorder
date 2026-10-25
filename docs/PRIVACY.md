@@ -25,6 +25,7 @@ The following information will be obtained and retained.
   - Video bit rate (data volume)
   - Transcription processing time, model identifier, language
   - Other configuration items
+- Whether "Follow Google Meet mute" detection stopped working or its two signals disagreed during a recording (only the detected states, such as "muted" or "unknown"; no meeting URL, meeting code, participant names or audio)
 
 No personally identifiable information is included in the information collected.
 
@@ -36,6 +37,15 @@ The following information will not be collected at all.
 - Personal information (name, address, date of birth, email address, etc.)
 - Recording data
 - Audio data and transcription data
+- Content of Google Meet pages (meeting URL, meeting code, participants, chat, audio or video)
+
+## Google Meet Access (optional)
+
+The "Follow Google Meet mute" setting (added after Chrome extension v1.9.0) silences your microphone in the recording while you are muted in the Google Meet tab being recorded.
+
+- Access to meet.google.com is requested only when you turn this setting on, and is removed when you turn it off.
+- With access granted, the extension runs a script on meet.google.com pages that reads only whether your microphone is muted (the mic button state and whether Meet is sending your microphone audio).
+- This mute state is used only inside your browser to silence the recording. It is not sent to us or to any external service, except the detection status events described under Data Collection.
 
 ## Cookie
 
@@ -69,3 +79,4 @@ Revised versions will be posted on this site.
 - 2026-02-10: Revised (updated Sentry opt-out instructions, added other configuration items to data collection)
 - 2026-09-04: Revised (updated upon release of Terms of Service)
 - 2026-09-09: Revised (clarified data handling for transcription feature, clarified independence from Terms of Service)
+- 2026-10-25: Revised (added optional Google Meet access for the "Follow Google Meet mute" setting)

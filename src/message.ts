@@ -2,6 +2,7 @@ import type { Resolution, Configuration, SyncConfiguration, CropRegion, VideoRec
 import type { RecordingState } from './handler'
 import type { ModelDownloadProgress } from './ml/model_downloader'
 import type { SummaryResult } from './summary/types'
+import type { MeetMuteState, SignalState } from './meet/combine'
 
 export const TIMER_STOP_CONFIRM_PENDING_KEY = 'timerStopConfirmPending'
 export const TIMER_STOP_TRIGGER_KEY = 'timerStopTrigger'
@@ -54,6 +55,12 @@ export type Message =
     | SummaryStatusResponseMessage
     | CancelTasksForPathMessage
     | CloseOffscreenIfIdleMessage
+    | SetMicMutedMessage
+    | MeetMuteStateMessage
+    | MeetMuteDisagreementMessage
+    | MeetContentReadyMessage
+    | MeetSyncControlMessage
+    | MeetFollowMessage
 
 export interface ExceptionMessage {
     type: 'exception'
@@ -84,6 +91,8 @@ export interface StartRecordingResponse {
     mimeType: string
     recordingMode: VideoRecordingMode
     micEnabled: boolean
+    /** The recorded mic should follow Meet's mute state (setting on and a mic is being recorded) */
+    followMeetMute: boolean
     stopAtMs?: number
 }
 
@@ -355,4 +364,52 @@ export interface CancelTasksForPathMessage {
 // Request offscreen document to close itself if no tasks are active (service_worker → offscreen)
 export interface CloseOffscreenIfIdleMessage {
     type: 'close-offscreen-if-idle'
+}
+
+// Silence or restore the recorded microphone (service_worker → offscreen)
+export interface SetMicMutedMessage {
+    type: 'set-mic-muted'
+    muted: boolean
+}
+
+// Mute state of a Meet tab (Meet content script → offscreen and service_worker).
+// The offscreen recorder applies it directly (no service worker wake-up on the critical path);
+// the service worker only keeps the displayed status.
+export interface MeetMuteStateMessage {
+    type: 'meet-mute-state'
+    state: MeetMuteState
+    dom: SignalState
+    sender: SignalState
+    /** The MAIN-world sender hook is running in the page */
+    hookActive: boolean
+    /** The page is still loading; state is not meaningful yet and must not be acted on */
+    settling: boolean
+}
+
+// The DOM and sender signals contradicted each other for a while (Meet content script → service_worker)
+export interface MeetMuteDisagreementMessage {
+    type: 'meet-mute-disagreement'
+    dom: SignalState
+    sender: SignalState
+}
+
+// A Meet content script loaded; the response says whether it should report (content script → service_worker)
+export interface MeetContentReadyMessage {
+    type: 'meet-content-ready'
+}
+export interface MeetContentReadyResponse {
+    report: boolean
+}
+
+// Start or stop reporting mute state (service_worker → Meet content script, via chrome.tabs.sendMessage).
+// The content script responds with its current MeetMuteStateMessage.
+export interface MeetSyncControlMessage {
+    type: 'meet-sync-control'
+    report: boolean
+}
+
+// Which tab's Meet mute state the recorder follows, or null for none (service_worker → offscreen)
+export interface MeetFollowMessage {
+    type: 'meet-follow'
+    tabId: number | null
 }

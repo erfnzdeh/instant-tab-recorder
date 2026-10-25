@@ -1,6 +1,6 @@
 import { render } from 'vitest-browser-lit'
 import { html } from 'lit'
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { shadowQuery, shadowQueryAll, elementUpdated } from './test-helpers'
 import { simulateChromeMessage } from './test-setup'
 import '../../src/element/settings'
@@ -102,6 +102,11 @@ vi.mock('../../src/ml/opfs_model_cache', () => {
         OPFSModelCache: MockOPFSModelCache,
     }
 })
+
+function findSwitch(el: HTMLElement, label: string): any {
+    const labelEl = shadowQueryAll(el, 'label.switch-label').find(l => l.textContent?.includes(label))
+    return labelEl?.querySelector('md-switch') ?? null
+}
 
 describe('extension-settings', () => {
     beforeEach(() => {
@@ -1672,6 +1677,109 @@ describe('extension-settings', () => {
             expect(sendSpy).toHaveBeenCalledTimes(2)
 
             sendSpy.mockRestore()
+        })
+    })
+
+    describe('Follow Google Meet mute', () => {
+        let granted: boolean
+        let permissions: {
+            contains: ReturnType<typeof vi.fn>
+            request: ReturnType<typeof vi.fn>
+            remove: ReturnType<typeof vi.fn>
+            onAdded: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> }
+            onRemoved: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> }
+        }
+
+        beforeEach(() => {
+            granted = false
+            permissions = {
+                contains: vi.fn(async () => granted),
+                request: vi.fn(async () => {
+                    granted = true
+                    return true
+                }),
+                remove: vi.fn(async () => {
+                    granted = false
+                    return true
+                }),
+                onAdded: { addListener: vi.fn(), removeListener: vi.fn() },
+                onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
+            }
+            ;(chrome as unknown as Record<string, unknown>).permissions = permissions
+        })
+
+        afterEach(() => {
+            delete (chrome as unknown as Record<string, unknown>).permissions
+        })
+
+        async function renderWith(mutate: (config: Configuration) => void) {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            config.microphone.followMeetMute = false
+            config.audioSeparation.enabled = false
+            mutate(config)
+            Settings.setConfiguration(config)
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await vi.waitFor(() => expect(permissions.contains).toHaveBeenCalled())
+            await elementUpdated(el)
+            return el
+        }
+
+        test('requests Meet access when turned on and saves the setting', async () => {
+            const el = await renderWith(() => {})
+            const sw = findSwitch(el, 'Follow Google Meet mute')
+            expect(sw.selected).toBe(false)
+
+            sw.selected = true
+            sw.dispatchEvent(new Event('input'))
+            await vi.waitFor(() => expect(Settings.getConfiguration().microphone.followMeetMute).toBe(true))
+            expect(permissions.request).toHaveBeenCalledWith({ origins: ['https://meet.google.com/*'] })
+        })
+
+        test('stays off when access is denied', async () => {
+            permissions.request.mockResolvedValue(false)
+            const el = await renderWith(() => {})
+            const sw = findSwitch(el, 'Follow Google Meet mute')
+            sw.selected = true
+            sw.dispatchEvent(new Event('input'))
+            await vi.waitFor(() => expect(permissions.request).toHaveBeenCalled())
+            await vi.waitFor(() => expect(findSwitch(el, 'Follow Google Meet mute').selected).toBe(false))
+            expect(Settings.getConfiguration().microphone.followMeetMute).toBe(false)
+        })
+
+        test('removes Meet access when turned off', async () => {
+            granted = true
+            const el = await renderWith(c => (c.microphone.followMeetMute = true))
+            const sw = findSwitch(el, 'Follow Google Meet mute')
+            expect(sw.selected).toBe(true)
+
+            sw.selected = false
+            sw.dispatchEvent(new Event('input'))
+            await vi.waitFor(() => expect(permissions.remove).toHaveBeenCalled())
+            await vi.waitFor(() => expect(Settings.getConfiguration().microphone.followMeetMute).toBe(false))
+        })
+
+        test('shows the switch off with a hint when the setting is on but access is missing', async () => {
+            const el = await renderWith(c => (c.microphone.followMeetMute = true))
+            expect(findSwitch(el, 'Follow Google Meet mute').selected).toBe(false)
+            const hint = shadowQueryAll(el, '.settings-hint.error').find(h =>
+                h.textContent?.includes("Access to meet.google.com isn't granted"),
+            )
+            expect(hint).toBeDefined()
+        })
+
+        test('offers the separate mic file option only while following Meet with separation on', async () => {
+            const off = await renderWith(c => (c.audioSeparation.enabled = true))
+            expect(findSwitch(off, 'Apply Meet mute to the separate mic file')).toBeNull()
+
+            granted = true
+            const on = await renderWith(c => {
+                c.audioSeparation.enabled = true
+                c.microphone.followMeetMute = true
+            })
+            expect(findSwitch(on, 'Apply Meet mute to the separate mic file')).not.toBeNull()
         })
     })
 })

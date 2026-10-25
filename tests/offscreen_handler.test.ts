@@ -38,6 +38,7 @@ function createMockSession(overrides: Partial<OffscreenSession> = {}): Offscreen
             mimeType: 'video/webm',
             recordingMode: 'video-and-audio',
             micEnabled: false,
+            followMeetMute: false,
         }),
         stop: vi.fn().mockResolvedValue({
             startAtMs: 1000,
@@ -55,6 +56,7 @@ function createMockSession(overrides: Partial<OffscreenSession> = {}): Offscreen
         startPreview: vi.fn(),
         stopPreview: vi.fn(),
         updateCropRegion: vi.fn(),
+        setMicMuted: vi.fn(),
         ...overrides,
     }
 }
@@ -150,10 +152,11 @@ describe('start-recording', () => {
             noiseSuppression: true,
             echoCancellation: true,
             autoGainControl: false,
+            followMeetMute: false,
         }
         config.cropping = { enabled: true, region: { x: 10, y: 20, width: 640, height: 480 } }
         config.muteRecordingTab = true
-        config.audioSeparation = { enabled: true }
+        config.audioSeparation = { enabled: true, applyMeetMuteToMicFile: false }
         const videoFormat = new VideoFormat(
             'video-and-audio',
             'webm',
@@ -186,7 +189,7 @@ describe('start-recording', () => {
             microphone: config.microphone,
             cropping: config.cropping,
             muteRecordingTab: true,
-            audioSeparation: { enabled: true },
+            audioSeparation: { enabled: true, applyMeetMuteToMicFile: false },
         })
     })
 
@@ -208,6 +211,7 @@ describe('start-recording', () => {
             mimeType: 'video/webm',
             recordingMode: 'audio-only',
             micEnabled: true,
+            followMeetMute: false,
         }
         const deps = createMockDeps({
             session: createMockSession({
@@ -691,6 +695,75 @@ describe('update-crop-region', () => {
         const handler = new OffscreenHandler(deps)
         await handler.handleMessage({ type: 'update-crop-region', region })
         expect(deps.session.updateCropRegion).toHaveBeenCalledWith(region)
+    })
+})
+
+// ---------- set-mic-muted ----------
+
+describe('set-mic-muted', () => {
+    it('calls session.setMicMuted', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'set-mic-muted', muted: true })
+        expect(deps.session.setMicMuted).toHaveBeenCalledWith(true)
+    })
+})
+
+// ---------- Meet mute applied directly ----------
+
+const fromTab = (id: number) => ({ tab: { id } }) as chrome.runtime.MessageSender
+const msg = (state: 'live' | 'muted' | 'unknown' | 'inactive', settling = false): Message => ({
+    type: 'meet-mute-state',
+    state,
+    dom: 'unknown',
+    sender: 'unknown',
+    hookActive: true,
+    settling,
+})
+
+describe('meet-mute-state (direct from the Meet content script)', () => {
+    it('applies only the followed tab and never responds', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        expect(handler.handleMessage(msg('muted'), fromTab(7))).toBeNull()
+        expect(deps.session.setMicMuted).not.toHaveBeenCalled()
+
+        await handler.handleMessage({ type: 'meet-follow', tabId: 7 })
+        expect(handler.handleMessage(msg('muted'), fromTab(8))).toBeNull()
+        expect(handler.handleMessage(msg('muted'))).toBeNull()
+        expect(deps.session.setMicMuted).not.toHaveBeenCalled()
+
+        handler.handleMessage(msg('muted'), fromTab(7))
+        handler.handleMessage(msg('live'), fromTab(7))
+        handler.handleMessage(msg('muted'), fromTab(7))
+        handler.handleMessage(msg('unknown'), fromTab(7))
+        handler.handleMessage(msg('muted'), fromTab(7))
+        handler.handleMessage(msg('inactive'), fromTab(7))
+        expect((deps.session.setMicMuted as Mock).mock.calls).toEqual([
+            [true],
+            [false],
+            [true],
+            [false],
+            [true],
+            [false],
+        ])
+    })
+
+    it('ignores settling pages', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'meet-follow', tabId: 7 })
+        handler.handleMessage(msg('unknown', true), fromTab(7))
+        expect(deps.session.setMicMuted).not.toHaveBeenCalled()
+    })
+
+    it('stops following when the recording stops', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'meet-follow', tabId: 7 })
+        await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
+        handler.handleMessage(msg('muted'), fromTab(7))
+        expect(deps.session.setMicMuted).not.toHaveBeenCalled()
     })
 })
 

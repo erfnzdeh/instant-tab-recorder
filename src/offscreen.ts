@@ -141,10 +141,10 @@ const handler = new OffscreenHandler({
 chrome.runtime.onMessage.addListener(
     (
         message: Message,
-        _sender: chrome.runtime.MessageSender,
+        sender: chrome.runtime.MessageSender,
         sendResponse: (response?: StartRecordingResponse) => void,
     ) => {
-        const resultPromise = handler.handleMessage(message)
+        const resultPromise = handler.handleMessage(message, sender)
         if (resultPromise == null) return
 
         resultPromise

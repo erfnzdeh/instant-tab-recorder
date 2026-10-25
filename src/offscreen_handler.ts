@@ -31,6 +31,7 @@ export interface OffscreenSession {
     startPreview(): void
     stopPreview(): void
     updateCropRegion(region: CropRegion): void
+    setMicMuted(muted: boolean): void
 }
 
 export interface OffscreenDeps {
@@ -60,6 +61,8 @@ export class OffscreenHandler {
     private timerStopAtMs: number | null = null
     private timerRemainingMs: number | null = null
     private currentRecordingStartAtMs: number | null = null
+    /** Tab whose Meet mute messages are applied to the recorded mic (set by the service worker) */
+    private meetFollowedTabId: number | null = null
 
     constructor(private readonly deps: OffscreenDeps) {}
 
@@ -84,7 +87,10 @@ export class OffscreenHandler {
         }
     }
 
-    handleMessage(message: Message): Promise<StartRecordingResponse | void> | null {
+    handleMessage(
+        message: Message,
+        sender?: chrome.runtime.MessageSender,
+    ): Promise<StartRecordingResponse | void> | null {
         switch (message.type) {
             case 'start-recording':
                 return this.handleStartRecording(message.data, message.trigger)
@@ -109,6 +115,17 @@ export class OffscreenHandler {
                 return this.handlePreviewControl(message.action)
             case 'update-crop-region':
                 return this.handleUpdateCropRegion(message.region)
+            case 'set-mic-muted':
+                this.deps.session.setMicMuted(message.muted)
+                return Promise.resolve()
+            case 'meet-follow':
+                this.meetFollowedTabId = message.tabId
+                return Promise.resolve()
+            case 'meet-mute-state':
+                // Sent by the Meet content script; applied here directly so silencing does not wait
+                // for the service worker to wake up. No response: the service worker also listens.
+                this.applyMeetMuteState(message, sender)
+                return null
             case 'start-transcription':
                 return this.handleStartTranscription(message.path)
             case 'query-transcription-status':
@@ -189,7 +206,18 @@ export class OffscreenHandler {
         return response
     }
 
+    private applyMeetMuteState(
+        message: Extract<Message, { type: 'meet-mute-state' }>,
+        sender: chrome.runtime.MessageSender | undefined,
+    ): void {
+        const tabId = sender?.tab?.id
+        if (tabId == null || tabId !== this.meetFollowedTabId || message.settling) return
+        // Only 'muted' silences the mic; unknown and inactive record it (fail-open)
+        this.deps.session.setMicMuted(message.state === 'muted')
+    }
+
     private async handleStopRecording(trigger: Trigger): Promise<void> {
+        this.meetFollowedTabId = null
         try {
             const result = await this.deps.session.stop()
             if (result) {
@@ -246,6 +274,7 @@ export class OffscreenHandler {
     }
 
     private async handleCancelRecording(): Promise<void> {
+        this.meetFollowedTabId = null
         let durationSec = 0
         try {
             durationSec = (await this.deps.session.cancel()) / 1000
